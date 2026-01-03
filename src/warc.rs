@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Seek, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::ops::Index;
 use crate::gz::GzipMember;
 use serde::Serialize;
