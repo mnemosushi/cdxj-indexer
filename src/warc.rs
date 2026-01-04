@@ -1,16 +1,14 @@
+use crate::IndexFormat;
+use crate::gz::GzipMember;
+use serde::Serialize;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::ops::Index;
-use crate::gz::GzipMember;
-use serde::Serialize;
 use url::Url;
-use warc::{RecordType, WarcHeader};
 use warc::WarcReader;
-use crate::IndexFormat;
+use warc::{RecordType, WarcHeader};
 
-pub struct Warc {
-}
-
+pub struct Warc {}
 
 #[derive(Serialize)]
 struct CdxData {
@@ -55,8 +53,17 @@ impl CdxData {
         // S: compressed record size
         // V: compressed file offset
         // g: file name
-        Some(format!("{} {} {} {} {} - {} {} {}", self.url, self.mime, self.status,
-                     self.digest, self.redirect, self.length, self.offset, self.file_name))
+        Some(format!(
+            "{} {} {} {} {} - {} {} {}",
+            self.url,
+            self.mime,
+            self.status,
+            self.digest,
+            self.redirect,
+            self.length,
+            self.offset,
+            self.file_name
+        ))
     }
 }
 
@@ -75,7 +82,7 @@ impl CdxRecord {
         Self {
             searchable_url: "".to_string(),
             timestamp: "".to_string(),
-            data: CdxData::new(file_name)
+            data: CdxData::new(file_name),
         }
     }
 }
@@ -85,22 +92,43 @@ pub struct CdxjWriter {}
 
 impl CdxRecordFormatter for CdxjWriter {
     fn write<T: Write>(writer: &mut T, record: &CdxRecord) -> std::io::Result<()> {
-        writeln!(writer, "{} {} {}", record.searchable_url, record.timestamp,
-            record.data.to_cdxj().ok_or(std::io::ErrorKind::InvalidData)?)?;
+        writeln!(
+            writer,
+            "{} {} {}",
+            record.searchable_url,
+            record.timestamp,
+            record
+                .data
+                .to_cdxj()
+                .ok_or(std::io::ErrorKind::InvalidData)?
+        )?;
         Ok(())
     }
 }
 
 impl CdxRecordFormatter for Cdx11Writer {
     fn write<T: Write>(writer: &mut T, record: &CdxRecord) -> std::io::Result<()> {
-        writeln!(writer, "{} {} {}", record.searchable_url, record.timestamp,
-               record.data.to_cdx11().ok_or(std::io::ErrorKind::InvalidData)?)?;
+        writeln!(
+            writer,
+            "{} {} {}",
+            record.searchable_url,
+            record.timestamp,
+            record
+                .data
+                .to_cdx11()
+                .ok_or(std::io::ErrorKind::InvalidData)?
+        )?;
         Ok(())
     }
 }
 
 impl Warc {
-    pub fn index(input: &str, output: &str, format: IndexFormat, gzip_members: Vec<GzipMember>) -> Result<(), std::io::Error> {
+    pub fn index(
+        input: &str,
+        output: &str,
+        format: IndexFormat,
+        gzip_members: Vec<GzipMember>,
+    ) -> Result<(), std::io::Error> {
         let file = WarcReader::from_path_gzip(input)?;
         let output = File::create(output)?;
         let mut writer = BufWriter::new(output);
@@ -121,7 +149,8 @@ impl Warc {
                     }
 
                     if let Some(content_type) = record.header(WarcHeader::ContentType)
-                        && content_type != "application/http; msgtype=response" {
+                        && content_type != "application/http; msgtype=response"
+                    {
                         // Skip non-http response
                         continue;
                     }
@@ -130,7 +159,8 @@ impl Warc {
                     cdx_record.timestamp = record.date().format("%Y%m%d%H%M%S").to_string();
 
                     if let Some(target_uri) = record.header(WarcHeader::TargetURI)
-                            && let Ok(uri) = Url::parse(&target_uri) {
+                        && let Ok(uri) = Url::parse(&target_uri)
+                    {
                         let mut domain = uri
                             .host_str()
                             .unwrap()
@@ -152,9 +182,7 @@ impl Warc {
                         if let Some(query) = uri.query() {
                             let query_string = if query.contains('&') {
                                 let query_to_sort = query.to_lowercase();
-                                let mut sorted: Vec<&str> = query_to_sort
-                                    .split('&')
-                                    .collect();
+                                let mut sorted: Vec<&str> = query_to_sort.split('&').collect();
 
                                 sorted.sort();
                                 sorted.join("&").to_lowercase()
@@ -189,9 +217,10 @@ impl Warc {
                     // HTTP Status
                     if body.read_line(&mut first_line).is_ok() {
                         let mut http_status = first_line.split_whitespace();
-                        if http_status.next().is_some() &&
-                            let Some(status) = http_status.next() &&
-                            let Ok(status) = status.parse::<u32>() {
+                        if http_status.next().is_some()
+                            && let Some(status) = http_status.next()
+                            && let Ok(status) = status.parse::<u32>()
+                        {
                             cdx_record.data.status = status;
                         }
                     }
@@ -211,9 +240,8 @@ impl Warc {
                                         .0
                                         .trim()
                                         .to_owned();
-                                },
-                                "location" =>
-                                    cdx_record.data.redirect = value.trim().to_owned(),
+                                }
+                                "location" => cdx_record.data.redirect = value.trim().to_owned(),
                                 _ => (),
                             }
                         }
