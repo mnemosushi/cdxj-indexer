@@ -39,10 +39,7 @@ impl CdxData {
     }
 
     pub fn to_cdxj(&self) -> Option<String> {
-        match serde_json::to_string(self) {
-            Ok(json) => Some(json),
-            Err(_) => None,
-        }
+        serde_json::to_string(self).ok()
     }
 
     pub fn to_cdx11(&self) -> Option<String> {
@@ -88,7 +85,7 @@ pub struct CdxjWriter {}
 
 impl CdxRecordFormatter for CdxjWriter {
     fn write<T: Write>(writer: &mut T, record: &CdxRecord) -> std::io::Result<()> {
-        write!(writer, "{} {} {}\n", record.searchable_url, record.timestamp,
+        writeln!(writer, "{} {} {}", record.searchable_url, record.timestamp,
             record.data.to_cdxj().ok_or(std::io::ErrorKind::InvalidData)?)?;
         Ok(())
     }
@@ -96,7 +93,7 @@ impl CdxRecordFormatter for CdxjWriter {
 
 impl CdxRecordFormatter for Cdx11Writer {
     fn write<T: Write>(writer: &mut T, record: &CdxRecord) -> std::io::Result<()> {
-        write!(writer, "{} {} {}\n", record.searchable_url, record.timestamp,
+        writeln!(writer, "{} {} {}", record.searchable_url, record.timestamp,
                record.data.to_cdx11().ok_or(std::io::ErrorKind::InvalidData)?)?;
         Ok(())
     }
@@ -104,19 +101,17 @@ impl CdxRecordFormatter for Cdx11Writer {
 
 impl Warc {
     pub fn index(input: &str, output: &str, format: IndexFormat, gzip_members: Vec<GzipMember>) -> Result<(), std::io::Error> {
-        let file = WarcReader::from_path_gzip(&input)?;
+        let file = WarcReader::from_path_gzip(input)?;
         let output = File::create(output)?;
         let mut writer = BufWriter::new(output);
 
         // We are adding space before header, to make sure sort does not move this header position
         if let IndexFormat::CDX = format {
-            writer.write(b" CDX N b a m s k r M S V g\n")?;
+            writer.write_all(b" CDX N b a m s k r M S V g\n")?;
         }
 
-        let mut count = 0;
-        for record in file.iter_records() {
+        for (count, record) in file.iter_records().enumerate() {
             let member = gzip_members.index(count);
-            count += 1;
             match record {
                 Err(err) => println!("ERROR: {}\r\n", err),
                 Ok(record) => {
@@ -125,11 +120,10 @@ impl Warc {
                         continue;
                     }
 
-                    if let Some(content_type) = record.header(WarcHeader::ContentType) {
-                        if content_type != "application/http; msgtype=response" {
-                            // Skip non-http response
-                            continue;
-                        }
+                    if let Some(content_type) = record.header(WarcHeader::ContentType)
+                        && content_type != "application/http; msgtype=response" {
+                        // Skip non-http response
+                        continue;
                     }
 
                     let mut cdx_record = CdxRecord::new(input.to_string());
@@ -193,7 +187,7 @@ impl Warc {
                     let mut body = BufReader::new(record.body());
 
                     // HTTP Status
-                    if let Ok(_) = body.read_line(&mut first_line) {
+                    if body.read_line(&mut first_line).is_ok() {
                         let mut http_status = first_line.split_whitespace();
                         if http_status.next().is_some() &&
                             let Some(status) = http_status.next() &&
@@ -202,27 +196,25 @@ impl Warc {
                         }
                     }
 
-                    for line in body.lines().into_iter() {
-                        if let Ok(line) = line {
-                            if line == "" {
-                                break;
-                            }
+                    for line in body.lines().map_while(Result::ok) {
+                        if line.trim().is_empty() {
+                            break;
+                        }
 
-                            if let Some((key, value)) = line.split_once(':') {
-                                //println!("{key}: {value}");
-                                match key.to_lowercase().as_str() {
-                                    "content-type" => {
-                                        cdx_record.data.mime = value
-                                            .split_once(';')
-                                            .unwrap_or((value, ""))
-                                            .0
-                                            .trim()
-                                            .to_owned();
-                                    },
-                                    "location" =>
-                                        cdx_record.data.redirect = value.trim().to_owned(),
-                                    _ => (),
-                                }
+                        if let Some((key, value)) = line.split_once(':') {
+                            //println!("{key}: {value}");
+                            match key.to_lowercase().as_str() {
+                                "content-type" => {
+                                    cdx_record.data.mime = value
+                                        .split_once(';')
+                                        .unwrap_or((value, ""))
+                                        .0
+                                        .trim()
+                                        .to_owned();
+                                },
+                                "location" =>
+                                    cdx_record.data.redirect = value.trim().to_owned(),
+                                _ => (),
                             }
                         }
                     }
@@ -232,9 +224,6 @@ impl Warc {
                         IndexFormat::CDX => Cdx11Writer::write(writer.by_ref(), &cdx_record)?,
                         IndexFormat::CDXJ => CdxjWriter::write(writer.by_ref(), &cdx_record)?,
                     }
-                    // if let Some(cdxj) = cdx_record.to_cdxj() {
-                    //     writer.write(cdxj.as_bytes())?;
-                    // }
                 }
             }
         }

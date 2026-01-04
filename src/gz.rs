@@ -73,7 +73,7 @@ impl<R: Read + Seek> GzipMemberIterator<R> {
         }
 
         let mut buffer = [0u8; 4096];
-        let pos = self.reader.seek(SeekFrom::Current(0))?;
+        let pos = self.reader.stream_position()?;
 
         self.positions.clear();
 
